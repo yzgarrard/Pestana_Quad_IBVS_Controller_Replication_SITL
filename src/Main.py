@@ -34,8 +34,9 @@ kd_vx = 0.0124
 kp_vy = -0.298
 kd_vy = -0.145
 # kp_yaw = -0.990
-kp_yaw = 4
-kd_yaw = -0.119
+kp_yaw = 0.990
+# kd_yaw = -0.119
+kd_yaw = 0.119
 kp_vz = 1.430
 kd_vz = 0.371
 
@@ -100,8 +101,8 @@ def decouplecentroiddata():
         return None, None, None, None
 
     if not got_initial_frame:
-        initial_f_u = f_u
-        initial_f_v = f_v
+        initial_f_u = 1/2  # f_u
+        initial_f_v = 1/2  # f_v
         initial_f_delta = f_delta
         got_initial_frame = True
         f_u, f_v, f_delta = getcentroiddata()
@@ -125,7 +126,7 @@ def getsetpoints():
 
     # x velocity controller
     delta_x_tme = delta_f_delta_x * math.sqrt(A_exp) * math.sqrt((alpha_u * alpha_v) / (w_im * h_im))
-    v_xr = delta_x_tme * kp_vx# + ((delta_x_tme - prev_delta_x_tme) / (1/30)) * kd_vx
+    v_xr = delta_x_tme * kp_vx + ((delta_x_tme - prev_delta_x_tme) / (1/30)) * kd_vx
     prev_delta_x_tme = delta_x_tme
 
     # y velocity controller
@@ -135,7 +136,7 @@ def getsetpoints():
 
     # yawrate controller
     delta_psi_tme = delta_f_u_psi * FOV_u
-    yawrate = delta_psi_tme * kp_yaw# + ((delta_psi_tme - prev_delta_psi_tme) / (1/30)) * kd_yaw
+    yawrate = delta_psi_tme * kp_yaw + ((delta_psi_tme - prev_delta_psi_tme) / (1/30)) * kd_yaw
     prev_delta_psi_tme = delta_psi_tme
 
     # z velocity controller
@@ -159,9 +160,12 @@ async def run():
             print(f"Drone discovered with UUID: {state.uuid}")
             break
 
-    print("-- Arming")
-    if not drone.telemetry.armed():
-        await drone.action.arm()
+    async for is_armed in drone.telemetry.armed():
+        print("Is_armed:", is_armed)
+        if not is_armed:
+            print("-- Arming")
+            await drone.action.arm()
+        break
 
     print("-- Setting initial setpoint")
     await drone.offboard.set_velocity_body(
@@ -196,7 +200,7 @@ async def run():
 
         await drone.offboard.set_velocity_body(
             # VelocityBodyYawspeed(v_xr, v_yr, v_zr, yawrate)
-            VelocityBodyYawspeed(0, 0, 0, yawrate)
+            VelocityBodyYawspeed(v_xr, 0, 0, yawrate)
         )
 
         # if x is None:
