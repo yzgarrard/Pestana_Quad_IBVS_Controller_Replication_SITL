@@ -6,12 +6,17 @@ from CameraUtil import Video
 from mavsdk import System
 from mavsdk import (OffboardError, VelocityBodyYawspeed, PositionNedYaw, Telemetry)
 import csv
+import threading
+
+# http://playerstage.sourceforge.net/wiki/GazeboProblemResolutionGuide#What_is_the_focal_length_of_the_camera.3F_How_to_set_it.3F
 
 # Some setup
 w_im = 1280  # image width in pixels
 h_im = 720  # image height in pixels
-alpha_u = w_im
-alpha_v = h_im
+# alpha_u = 64  # d_exp * pixels in vertical of target at d_exp
+# alpha_v = 64
+alpha_u = 64  # d_exp * pixels in vertical of target at d_exp
+alpha_v = 64
 got_initial_frame = False
 initial_f_u = None
 initial_f_v = None
@@ -21,22 +26,14 @@ psi_telem = None
 theta_centroid_ref = 0.0
 theta_centroid = None
 FOV_u = 90.0
-FOV_v = (h_im / w_im) * FOV_u
+focal_length = (w_im / 2) / math.tan(math.radians(FOV_u) / 2)
+FOV_v = 2 * math.atan(h_im / (2 * focal_length))
 A_exp = 1225  # m or cm or px?
 d_exp = 3.0
 prev_delta_x_tme = 0.0
 prev_delta_y_tme = 0.0
 prev_delta_psi_tme = 0.0
 prev_delta_z_tme = 0.0
-
-# kp_vx = 0.0254
-# kd_vx = 0.0124
-# kp_vy = -0.298
-# kd_vy = -0.145
-# kp_yaw = -0.990
-# kd_yaw = -0.119
-# kp_vz = 1.430
-# kd_vz = 0.371
 
 kp_vx = 0.0254
 kd_vx = 0.0124
@@ -46,15 +43,6 @@ kp_yaw = 0.990
 kd_yaw = 0.119
 kp_vz = 1.430
 kd_vz = 0.371
-
-# kp_vx = .25
-# kd_vx = 0.1
-# kp_vy = 0
-# kd_vy = 0
-# kp_yaw = 1
-# kd_yaw = 0.01
-# kp_vz = 0.01
-# kd_vz = 0.01
 
 euler_angles = None
 drone_position = None
@@ -88,10 +76,16 @@ csv_row = {
     'yawrate': "",
     'pitch_angle': "",
     'roll_angle': "",
-    'yaw_angle': ""
+    'yaw_angle': "",
+    'f_delta_ref': "",
+    'f_v_ref': "",
+    'vx_measured': "",
+    'vz_measured': ""
 }
 
+drone = System()
 video = Video()
+v_xr, v_yr, yawrate, v_zr = 0, 0, 0, 0
 
 
 def gettargetposition():
@@ -123,8 +117,8 @@ def gettargetposition():
 
     # titles = ["rgb", "red", "green", "blue"]
     # images = [frame, red_thresholded, green_thresholded, blue_thresholded]
-    cv2.imshow('rgb', frame)
-    cv2.imshow('red', red_thresholded)
+    # cv2.imshow('rgb', frame)
+    # cv2.imshow('red', red_thresholded)
     # cv2.imshow('green', green_thresholded)
     # cv2.imshow('blue', blue_thresholded)
 
@@ -174,8 +168,8 @@ def decouplecentroiddata():
 
     if not got_initial_frame:
         initial_f_u = 0.5  # f_u
-        initial_f_v = 0.25  # f_v
-        initial_f_delta = 13
+        initial_f_v = 0.5  # desired f_v
+        initial_f_delta = 12.8
         got_initial_frame = True
 
     # Equation 2 from Pestana "Computer vision based general object following
@@ -188,6 +182,8 @@ def decouplecentroiddata():
     csv_row['delta_f_u_y'] = delta_f_u_y
     csv_row['delta_f_v_z'] = delta_f_v_z
     csv_row['delta_f_delta_x'] = delta_f_delta_x
+    csv_row['f_delta_ref'] = initial_f_delta
+    csv_row['f_v_ref'] = initial_f_v
 
     return delta_f_u_psi, delta_f_u_y, delta_f_v_z, delta_f_delta_x
 
@@ -236,16 +232,10 @@ def getsetpoints():
     return v_xr, v_yr, yawrate, v_zr
 
 
-async def run():
-    global euler_angles
-    drone = System()
+async def mav_comm():
+    print("SDFSDFSF")
+    global euler_angles, psi_telem_ref, drone, v_xr, v_yr, yawrate, v_zr
     await drone.connect(system_address="udp://:14540")
-
-    print("Waiting for drone to connect...")
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            print(f"Drone discovered with UUID: {state.uuid}")
-            break
 
     async for is_armed in drone.telemetry.armed():
         print("Is_armed:", is_armed)
@@ -275,52 +265,144 @@ async def run():
                 math.fabs(drone_position.position_body.z_m + 10) < 0.5):
             break
 
+    print("Waiting for drone to connect...")
+    async for state in drone.core.connection_state():
+        if state.is_connected:
+            print(f"Drone discovered with UUID: {state.uuid}")
+            break
+
+    timeout_cnt = 0
+    while True:
+        async for euler_angles in drone.telemetry.attitude_euler():
+            csv_row['pitch_angle'] = euler_angles.pitch_deg
+            csv_row['roll_angle'] = euler_angles.roll_deg
+            csv_row['yaw_angle'] = euler_angles.yaw_deg
+            break
+        async for odometry in drone.telemetry.odometry():
+            # print(odometry)
+            csv_row['vx_measured'] = odometry.speed_body.velocity_x_m_s
+            csv_row['vz_measured'] = odometry.speed_body.velocity_z_m_s
+            break
+        if v_xr is None:
+            timeout_cnt = timeout_cnt + controller_period
+            if timeout_cnt > 1 / 5:
+                await drone.offboard.set_velocity_body(
+                    VelocityBodyYawspeed(0, 0, 0, 0)
+                )
+            continue
+        await drone.offboard.set_velocity_body(
+            VelocityBodyYawspeed(v_xr, v_yr, v_zr, yawrate)
+        )
+        if math.fabs(psi_telem_ref - euler_angles.yaw_deg) > 25.0:
+            psi_telem_ref = euler_angles.yaw_deg
+        timeout_cnt = 0
+        # await asyncio.sleep(controller_period)
+
+
+async def run():
+    global euler_angles, psi_telem_ref, drone, v_xr, v_yr, yawrate, v_zr
+
+    # async for is_armed in drone.telemetry.armed():
+    #     print("Is_armed:", is_armed)
+    #     if not is_armed:
+    #         print("-- Arming")
+    #         await drone.action.arm()
+    #     break
+    #
+    # print("-- Setting initial setpoint")
+    # await drone.offboard.set_velocity_body(
+    #     VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+    #
+    # print("-- Starting offboard")
+    # try:
+    #     await drone.offboard.start()
+    # except OffboardError as error:
+    #     print(f"Starting offboard mode failed with error code: \
+    #           {error._result.result}")
+    #     print("-- Disarming")
+    #     await drone.action.disarm()
+    #     return
+    #
+    # await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -10.0, 90.0))
+    # async for drone_position in drone.telemetry.odometry():
+    #     if (math.fabs(drone_position.position_body.x_m) < 0.5 and
+    #             math.fabs(drone_position.position_body.y_m) < 0.5 and
+    #             math.fabs(drone_position.position_body.z_m + 10) < 0.5):
+    #         break
+
     while not video.frame_available():
         continue
 
-    gettargetposition()
+    # frame = video.frame()
+    # red = frame[:, :, 2]
+    # _, red_thresholded = cv2.threshold(red, 120, 255, cv2.THRESH_BINARY)
+    # cv2.imshow('rgb', frame)
+    # cv2.imshow('red', red_thresholded)
 
     input("Press Enter to start...")
-    timeout_cnt = 0
+    # timeout_cnt = 0
 
     with open('debug_data.csv', mode='w') as csv_file:
         fieldnames = ['time', 'x_bb', 'y_bb', 'w_bb', 'h_bb', 'f_u', 'f_v', 'f_delta', 'delta_f_u_psi', 'delta_f_u_y',
                       'delta_f_v_z', 'delta_f_delta_x', 'delta_x_tme', 'delta_y_tme', 'delta_psi_tme', 'delta_z_tme',
                       'prev_delta_x_tme', 'prev_delta_y_tme', 'prev_delta_psi_tme', 'prev_delta_z_tme',
-                      'v_xr', 'v_yr', 'v_zr', 'yawrate', 'pitch_angle', 'roll_angle', 'yaw_angle']
+                      'v_xr', 'v_yr', 'v_zr', 'yawrate', 'pitch_angle', 'roll_angle', 'yaw_angle', 'f_delta_ref',
+                      'f_v_ref', 'vx_measured', 'vz_measured']
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         while True:
             await asyncio.sleep(controller_period)
             csv_row['time'] = time.time()
-            async for euler_angles in drone.telemetry.attitude_euler():
-                csv_row['pitch_angle'] = euler_angles.pitch_deg
-                csv_row['roll_angle'] = euler_angles.roll_deg
-                csv_row['yaw_angle'] = euler_angles.yaw_deg
-                break
+            # async for euler_angles in drone.telemetry.attitude_euler():
+            #     csv_row['pitch_angle'] = euler_angles.pitch_deg
+            #     csv_row['roll_angle'] = euler_angles.roll_deg
+            #     csv_row['yaw_angle'] = euler_angles.yaw_deg
+            #     break
+
+            # if math.fabs(psi_telem_ref - euler_angles.yaw_deg) > 25.0:
+            #     psi_telem_ref = euler_angles.yaw_deg
 
             v_xr, v_yr, yawrate, v_zr = getsetpoints()
 
-            if v_xr is None:
-                timeout_cnt = timeout_cnt + controller_period
-                if timeout_cnt > 1/5:
-                    await drone.offboard.set_velocity_body(
-                        VelocityBodyYawspeed(0, 0, 0, 0)
-                    )
-                continue
+            # if v_xr is None:
+            #     timeout_cnt = timeout_cnt + controller_period
+            #     if timeout_cnt > 1/5:
+            #         await drone.offboard.set_velocity_body(
+            #             VelocityBodyYawspeed(0, 0, 0, 0)
+            #         )
+            #     continue
 
-            # print("vxr: " + str(v_xr) + " vyr: " + str(v_yr) + " vzr: " + str(v_zr) + " yawrater: " + str(yawrate))
+            print("vxr: " + str(v_xr) + " vyr: " + str(v_yr) + " vzr: " + str(v_zr) + " yawrater: " + str(yawrate))
             # async for odometry in drone.telemetry.odometry():
             #     print(odometry)
+            #     csv_row['vx_measured'] = odometry.speed_body.velocity_x_m_s
+            #     csv_row['vz_measured'] = odometry.speed_body.velocity_z_m_s
             #     break
 
-            await drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(v_xr, v_yr, v_zr, yawrate)
-            )
+            # await drone.offboard.set_velocity_body(
+            #     VelocityBodyYawspeed(v_xr, v_yr, v_zr, yawrate)
+            # )
             writer.writerow(csv_row)
             timeout_cnt = 0
 
 
+def mav_comm_thread():
+    mav_comm_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(mav_comm_loop)
+    mav_comm_loop.run_until_complete(mav_comm())
+    mav_comm_loop.close()
+
+def main_thread():
+    main_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(main_loop)
+    main_loop.run_until_complete(run())
+    main_loop.close()
+
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
+    t1 = threading.Thread(target=mav_comm_thread, args=()).start()
+    time.sleep(2)
+    t2 = threading.Thread(target=main_thread(), args=()).start()
+    t1.join()
+    t2.join()
+    # loop = asyncio.get_event_loop()
+    # loop.run_until_complete(run())
