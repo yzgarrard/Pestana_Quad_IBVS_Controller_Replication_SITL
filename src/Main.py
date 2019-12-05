@@ -15,8 +15,8 @@ w_im = 1280  # image width in pixels
 h_im = 720  # image height in pixels
 # alpha_u = 64  # d_exp * pixels in vertical of target at d_exp
 # alpha_v = 64
-alpha_u = 64  # d_exp * pixels in vertical of target at d_exp
-alpha_v = 64
+alpha_u = 1280  # d_exp * pixels in vertical of target at d_exp
+alpha_v = 720
 got_initial_frame = False
 initial_f_u = None
 initial_f_v = None
@@ -117,8 +117,8 @@ def gettargetposition():
 
     # titles = ["rgb", "red", "green", "blue"]
     # images = [frame, red_thresholded, green_thresholded, blue_thresholded]
-    # cv2.imshow('rgb', frame)
-    # cv2.imshow('red', red_thresholded)
+    cv2.imshow('rgb', frame)
+    cv2.imshow('red', red_thresholded)
     # cv2.imshow('green', green_thresholded)
     # cv2.imshow('blue', blue_thresholded)
 

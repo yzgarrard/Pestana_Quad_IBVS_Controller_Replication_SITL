@@ -120,3 +120,11 @@ grid
 title('v_z measured vs v_z desired for static target')
 ylabel('v_z')
 xlabel('Time (s)')
+
+figure
+plot(data.time, data.f_v - 0.5,...
+    data.time, data.delta_f_v_z,...
+    data.time, data.pitch_angle,...
+    data.time, data.v_zr)
+
+legend('delta f_v', 'delta_f_v_z', 'pitch_angle', 'v_{zr}')
