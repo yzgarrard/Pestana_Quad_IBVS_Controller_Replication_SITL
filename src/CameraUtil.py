@@ -45,7 +45,7 @@ class Video:
             '! decodebin ! videoconvert ! video/x-raw,format=(string)BGR ! videoconvert'
         # Create a sink to get data
         self.video_sink_conf = \
-            '! appsink emit-signals=true sync=false max-buffers=1 drop=true'
+            '! appsink emit-signals=true sync=false max-buffers=2 drop=true'
 
         self.video_pipe = None
         self.video_sink = None
