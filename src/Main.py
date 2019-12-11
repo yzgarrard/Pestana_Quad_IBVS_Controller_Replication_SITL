@@ -1,100 +1,100 @@
 import asyncio
+import threading
 import time
 import math
 import cv2
 from CameraUtil import Video
-from mavsdk import System
-from mavsdk import (OffboardError, VelocityBodyYawspeed, PositionNedYaw, Telemetry)
+from pymavlink import mavutil
 import csv
 
 # Some setup
-w_im = 1280  # image width in pixels
-h_im = 720  # image height in pixels
-alpha_u = w_im
-alpha_v = h_im
-got_initial_frame = False
-initial_f_u = None
-initial_f_v = None
-initial_f_delta = None
-psi_telem_ref = 90.0
-psi_telem = None
-theta_centroid_ref = 0.0
-theta_centroid = None
-FOV_u = 90.0
-FOV_v = (h_im / w_im) * FOV_u
-A_exp = 1225  # m or cm or px?
-d_exp = 3.0
-prev_delta_x_tme = 0.0
-prev_delta_y_tme = 0.0
-prev_delta_psi_tme = 0.0
-prev_delta_z_tme = 0.0
-
-# kp_vx = 0.0254
-# kd_vx = 0.0124
-# kp_vy = -0.298
-# kd_vy = -0.145
-# kp_yaw = -0.990
-# kd_yaw = -0.119
-# kp_vz = 1.430
-# kd_vz = 0.371
-
-kp_vx = 0.0254
-kd_vx = 0.0124
-kp_vy = 0.298
-kd_vy = 0.145
-kp_yaw = 0.990
-kd_yaw = 0.119
-kp_vz = 1.430
-kd_vz = 0.371
-
-# kp_vx = .25
-# kd_vx = 0.1
-# kp_vy = 0
-# kd_vy = 0
-# kp_yaw = 1
-# kd_yaw = 0.01
-# kp_vz = 0.01
-# kd_vz = 0.01
-
-euler_angles = None
-drone_position = None
-
-controller_period = 1/30
-
-csv_row = {
+gd = {
     'time': "",
     'x_bb': "",
     'y_bb': "",
     'w_bb': "",
     'h_bb': "",
-    'f_u': "",
-    'f_v': "",
-    'f_delta': "",
-    'delta_f_u_psi': "",
-    'delta_f_u_y': "",
-    'delta_f_v_z': "",
-    'delta_f_delta_x': "",
-    'delta_x_tme': "",
-    'delta_y_tme': "",
-    'delta_psi_tme': "",
-    'delta_z_tme': "",
-    'prev_delta_x_tme': "",
-    'prev_delta_y_tme': "",
-    'prev_delta_psi_tme': "",
-    'prev_delta_z_tme': "",
+    'f_u': 0.5,
+    'f_v': 0.5,
+    'f_delta': 0.0,
+    'delta_f_u_psi': 0.0,
+    'delta_f_u_y': 0.0,
+    'delta_f_v_z': 0.0,
+    'delta_f_delta_x': 0.0,
+    'delta_x_tme': 0.0,
+    'delta_y_tme': 0.0,
+    'delta_psi_tme': 0.0,
+    'delta_z_tme': 0.0,
+    'prev_delta_x_tme': 0.0,
+    'prev_delta_y_tme': 0.0,
+    'prev_delta_psi_tme': 0.0,
+    'prev_delta_z_tme': 0.0,
     'v_xr': "",
     'v_yr': "",
     'v_zr': "",
     'yawrate': "",
-    'pitch_angle': "",
-    'roll_angle': "",
-    'yaw_angle': ""
+    'pitch_angle': 0.0,
+    'roll_angle': 0.0,
+    'yaw_angle': 90.0,
+    'w_im': 1280,
+    'h_im': 720,
+    'alpha_u': "",
+    'alpha_b': "",
+    'got_initial_frame': False,
+    'initial_f_u': 0.5,
+    'initial_f_v': 0.5,
+    'initial_f_delta': 13,
+    'psi_telem_ref': 90.0,
+    'psi_telem': None,
+    'theta_centroid_ref': 0.0,
+    'theta_centroid': None,
+    'FOV_u': 90.0,
+    'FOV_v': "",
+    'A_exp': 1225,  # m or cm or px?
+    'd_exp': 3.0,
+    'kp_vx': 0.0254,
+    'kd_vx': 0.0124,
+    'kp_vy': 0.298,
+    'kd_vy': 0.145,
+    'kp_yaw': 0.990,
+    'kd_yaw': 0.119,
+    'kp_vz': 1.430,
+    'kd_vz': 0.371,
+    'camera_period': 1/30,
+    'controller_period': 1/100,
+    'v_xlat': None,
+    'v_ylon': None,
+    'v_zalt': None,
+    'local_vx': None,
+    'local_vy': None,
+    'local_vz': None
 }
 
 video = Video()
+master = None
+setpoint_msg = None
 
 
-def gettargetposition():
+def getdronepositiondata():
+    while True:
+        msg = master.recv_match()
+        if not msg:
+            continue
+        if msg.get_type() == 'LOCAL_POSITION_NED_COV':
+            msg = msg.to_dict()
+            gd['local_x'] = msg['lat']
+            gd['local_y'] = msg['lon']
+            gd['local_z'] = msg['alt']
+            gd['local_vx'] = msg['vx']
+            gd['local_vy'] = msg['vy']
+            gd['local_vz'] = msg['vz']
+
+
+def _gettargetposition():
+    """
+    This is called by getcentroidata()
+    :return:
+    """
     # while not video.frame_available():
     #     continue
 
@@ -133,194 +133,316 @@ def gettargetposition():
     if cv2.waitKey(1) & 0xFF == ord('q'):
         return x
 
-    csv_row['x_bb'] = x
-    csv_row['y_bb'] = y
-    csv_row['w_bb'] = w
-    csv_row['h_bb'] = h
+    gd['x_bb'] = x
+    gd['y_bb'] = y
+    gd['w_bb'] = w
+    gd['h_bb'] = h
 
     return x, y, w, h
 
 
 def getcentroiddata():
-    x_bb, y_bb, w_bb, h_bb = gettargetposition()
+    """
+    Calculates centroid of target in camera frame. Runs at 30Hz
+    :return:
+    """
+    while True:
+        starttime = time.time()
+        x_bb, y_bb, w_bb, h_bb = _gettargetposition()
+        w_im = gd['w_im']
+        h_im = gd['h_im']
 
-    if x_bb is None:  # if nothing is in frame, don't send any information
-        return None, None, None
+        if x_bb is None:  # if nothing is in frame, don't send any information
+            return None, None, None
 
-    if (x_bb + w_bb == w_im or  # if target is at edge, don't send any information
-            x_bb == 0 or
-            y_bb + h_bb == h_im or
-            y_bb == 0):
-        return None, None, None
+        if (x_bb + w_bb == w_im or  # if target is at edge, don't send any information
+                x_bb == 0 or
+                y_bb + h_bb == h_im or
+                y_bb == 0):
+            return None, None, None
 
-    # Equation 1 from Pestana "Computer vision based general object following
-    f_u = (x_bb + (w_bb / 2)) / w_im
-    f_v = (y_bb + (h_bb / 2)) / h_im
-    f_delta = math.sqrt((w_im * h_im) / (w_bb * h_bb))
+        # Equation 1 from Pestana "Computer vision based general object following
+        f_u = (x_bb + (w_bb / 2)) / w_im
+        f_v = (y_bb + (h_bb / 2)) / h_im
+        f_delta = math.sqrt((w_im * h_im) / (w_bb * h_bb))
 
-    csv_row['f_u'] = f_u
-    csv_row['f_v'] = f_v
-    csv_row['f_delta'] = f_delta
+        gd['f_u'] = f_u
+        gd['f_v'] = f_v
+        gd['f_delta'] = f_delta
 
-    return f_u, f_v, f_delta
+        while time.time() - starttime < 1/30:
+            continue
 
 
-def decouplecentroiddata():
-    f_u, f_v, f_delta = getcentroiddata()
-    global got_initial_frame, initial_f_u, initial_f_v, initial_f_delta, FOV_u, FOV_v
+def _decouplecentroiddata():
+    """
+    Decouples the attitude of the quadrotor from the camera featueres. Called by getsetpoints()
+    :return:
+    """
+    global gd
+
+    f_u = gd['f_u']
+    f_v = gd['f_v']
+    f_delta = gd['f_delta']
+    initial_f_u = gd['initial_f_u']
+    initial_f_v = gd['initial_f_v']
+    initial_f_delta = gd['initial_f_delta']
+    psi_telem_ref = gd['psi_telem_ref']
+    theta_centroid_ref = gd['theta_centroid_ref']
+    FOV_u = gd['FOV_u']
+    FOV_v = gd['FOV_v']
 
     if f_u is None:
         return None, None, None, None
 
-    if not got_initial_frame:
-        initial_f_u = 0.5  # f_u
-        initial_f_v = 0.25  # f_v
-        initial_f_delta = 13
-        got_initial_frame = True
-
     # Equation 2 from Pestana "Computer vision based general object following
     delta_f_u_psi = f_u - initial_f_u
-    delta_f_u_y = delta_f_u_psi - ((psi_telem_ref - euler_angles.yaw_deg) / FOV_u)
-    delta_f_v_z = (f_v - initial_f_v) - ((theta_centroid_ref - euler_angles.pitch_deg) / FOV_v)
+    delta_f_u_y = delta_f_u_psi - ((psi_telem_ref - gd['yaw_angle']) / FOV_u)
+    delta_f_v_z = (f_v - initial_f_v) - ((theta_centroid_ref - gd['pitch_angle']) / FOV_v)
     delta_f_delta_x = f_delta - initial_f_delta
 
-    csv_row['delta_f_u_psi'] = delta_f_u_psi
-    csv_row['delta_f_u_y'] = delta_f_u_y
-    csv_row['delta_f_v_z'] = delta_f_v_z
-    csv_row['delta_f_delta_x'] = delta_f_delta_x
-
-    return delta_f_u_psi, delta_f_u_y, delta_f_v_z, delta_f_delta_x
+    gd['delta_f_u_psi'] = delta_f_u_psi
+    gd['delta_f_u_y'] = delta_f_u_y
+    gd['delta_f_v_z'] = delta_f_v_z
+    gd['delta_f_delta_x'] = delta_f_delta_x
 
 
 def getsetpoints():
-    delta_f_u_psi, delta_f_u_y, delta_f_v_z, delta_f_delta_x = decouplecentroiddata()
-    global A_exp, d_exp, w_im, h_im, alpha_u, alpha_v, prev_delta_psi_tme, prev_delta_x_tme, prev_delta_y_tme, prev_delta_z_tme
-    global kp_vx, kd_vx, kp_vy, kd_vy, kp_yaw, kd_yaw, kp_vz, kd_vz
+    """
+    Calculates setpoints. Runs at 100Hz
+    :return:
+    """
+    global gd
+    while True:
+        starttime = time.time()
+        _decouplecentroiddata()
+        A_exp = gd['A_exp']
+        d_exp = gd['d_exp']
+        w_im = gd['w_im']
+        h_im = gd['h_im']
+        alpha_u = gd['alpha_u']
+        alpha_v = gd['alpha_v']
+        prev_delta_psi_tme = gd['prev_delta_psi_tme']
+        prev_delta_x_tme = gd['prev_delta_x_tme']
+        prev_delta_y_tme = gd['prev_delta_y_tme']
+        prev_delta_z_tme = gd['prev_delta_z_tme']
+        kp_vx = gd['kp_vx']
+        kd_vx = gd['kd_vx']
+        kp_vy = gd['kp_vy']
+        kd_vy = gd['kd_vy']
+        kp_yaw = gd['kp_yaw']
+        kd_yaw = gd['kd_yaw']
+        kp_vz = gd['kp_vz']
+        kd_vz = gd['kd_vz']
+        camera_period = gd['camera_period']
+        controller_period = gd['controller_period']
+        FOV_u = gd['FOV_u']
+        delta_f_u_psi = gd['delta_f_u_psi']
+        delta_f_u_y = gd['delta_f_u_y']
+        delta_f_v_z = gd['delta_f_v_z']
+        delta_f_delta_x = gd['delta_f_delta_x']
 
-    if delta_f_u_psi is None:
-        return None, None, None, None
+        if delta_f_u_psi is None:
+            gd['v_xr'] = None
+            gd['v_yr'] = None
+            gd['yawrate'] = None
+            gd['v_zr'] = None
+            return
 
-    # x velocity controller
-    delta_x_tme = delta_f_delta_x * math.sqrt(A_exp) * math.sqrt((alpha_u * alpha_v) / (w_im * h_im))
-    v_xr = delta_x_tme * kp_vx + ((delta_x_tme - prev_delta_x_tme) * (controller_period)) * kd_vx
-    prev_delta_x_tme = delta_x_tme
+        # x velocity controller
+        delta_x_tme = delta_f_delta_x * math.sqrt(A_exp) * math.sqrt((alpha_u * alpha_v) / (w_im * h_im))
+        v_xr = delta_x_tme * kp_vx + ((delta_x_tme - prev_delta_x_tme) * (controller_period)) * kd_vx
+        prev_delta_x_tme = delta_x_tme
 
-    # y velocity controller
-    delta_y_tme = delta_f_u_y * d_exp * (w_im / alpha_u)
-    v_yr = delta_y_tme * kp_vy + ((delta_y_tme - prev_delta_y_tme) * (controller_period)) * kd_vy
-    prev_delta_y_tme = delta_y_tme
+        # y velocity controller
+        delta_y_tme = delta_f_u_y * d_exp * (w_im / alpha_u)
+        v_yr = delta_y_tme * kp_vy + ((delta_y_tme - prev_delta_y_tme) * (controller_period)) * kd_vy
+        prev_delta_y_tme = delta_y_tme
 
-    # yawrate controller
-    delta_psi_tme = delta_f_u_psi * FOV_u
-    yawrate = delta_psi_tme * kp_yaw + ((delta_psi_tme - prev_delta_psi_tme) * (controller_period)) * kd_yaw
-    prev_delta_psi_tme = delta_psi_tme
+        # yawrate controller
+        delta_psi_tme = delta_f_u_psi * FOV_u
+        yawrate = delta_psi_tme * kp_yaw + ((delta_psi_tme - prev_delta_psi_tme) * (controller_period)) * kd_yaw
+        prev_delta_psi_tme = delta_psi_tme
 
-    # z velocity controller
-    delta_z_tme = delta_f_v_z * d_exp * (h_im / alpha_v)
-    v_zr = delta_z_tme * kp_vz + ((delta_z_tme - prev_delta_z_tme) * (controller_period)) * kd_vz
-    prev_delta_z_tme = delta_z_tme
+        # z velocity controller
+        delta_z_tme = delta_f_v_z * d_exp * (h_im / alpha_v)
+        v_zr = delta_z_tme * kp_vz + ((delta_z_tme - prev_delta_z_tme) * (controller_period)) * kd_vz
+        prev_delta_z_tme = delta_z_tme
 
-    csv_row['delta_x_tme'] = delta_x_tme
-    csv_row['prev_delta_x_tme'] = prev_delta_x_tme
-    csv_row['v_xr'] = v_xr
-    csv_row['delta_y_tme'] = delta_y_tme
-    csv_row['prev_delta_y_tme'] = prev_delta_y_tme
-    csv_row['v_yr'] = v_yr
-    csv_row['delta_psi_tme'] = delta_psi_tme
-    csv_row['prev_delta_psi_tme'] = prev_delta_psi_tme
-    csv_row['yawrate'] = yawrate
-    csv_row['delta_z_tme'] = delta_z_tme
-    csv_row['prev_delta_z_tme'] = prev_delta_z_tme
-    csv_row['v_zr'] = v_zr
+        gd['delta_x_tme'] = delta_x_tme
+        gd['prev_delta_x_tme'] = prev_delta_x_tme
+        gd['v_xr'] = v_xr
+        gd['delta_y_tme'] = delta_y_tme
+        gd['prev_delta_y_tme'] = prev_delta_y_tme
+        gd['v_yr'] = v_yr
+        gd['delta_psi_tme'] = delta_psi_tme
+        gd['prev_delta_psi_tme'] = prev_delta_psi_tme
+        gd['yawrate'] = yawrate
+        gd['delta_z_tme'] = delta_z_tme
+        gd['prev_delta_z_tme'] = prev_delta_z_tme
+        gd['v_zr'] = v_zr
 
-    return v_xr, v_yr, yawrate, v_zr
+        while time.time() - starttime < 1/100:
+            continue
 
 
-async def run():
-    global euler_angles
-    drone = System()
-    await drone.connect(system_address="udp://:14540")
+def send_current_setpoint_loop():
+    """
+    Sends the current setpoint message at 100Hz
+    :return:
+    """
+    global setpoint_msg
+    while setpoint_msg is None:
+        continue
+    while True:
+        starttime = time.time()
+        master.mav.send(setpoint_msg)
+        while time.time() - starttime < 1/100:
+            continue
 
-    print("Waiting for drone to connect...")
-    async for state in drone.core.connection_state():
-        if state.is_connected:
-            print(f"Drone discovered with UUID: {state.uuid}")
-            break
 
-    async for is_armed in drone.telemetry.armed():
-        print("Is_armed:", is_armed)
-        if not is_armed:
-            print("-- Arming")
-            await drone.action.arm()
-        break
+def init():
+    global gd, master, setpoint_msg
 
-    print("-- Setting initial setpoint")
-    await drone.offboard.set_velocity_body(
-        VelocityBodyYawspeed(0.0, 0.0, 0.0, 0.0))
+    gd['alpha_u'] = gd['w_im']
+    gd['alpha_v'] = gd['h_im']
+    gd['FOV_v'] = gd['h_im'] / gd['w_im'] * gd['FOV_u']
 
-    print("-- Starting offboard")
-    try:
-        await drone.offboard.start()
-    except OffboardError as error:
-        print(f"Starting offboard mode failed with error code: \
-              {error._result.result}")
-        print("-- Disarming")
-        await drone.action.disarm()
-        return
+    master = mavutil.mavlink_connection("udpin:0.0.0.0:14540", baud=115200)
 
-    await drone.offboard.set_position_ned(PositionNedYaw(0.0, 0.0, -10.0, 90.0))
-    async for drone_position in drone.telemetry.odometry():
-        if (math.fabs(drone_position.position_body.x_m) < 0.5 and
-                math.fabs(drone_position.position_body.y_m) < 0.5 and
-                math.fabs(drone_position.position_body.z_m + 10) < 0.5):
-            break
+    print("Waiting for heartbeat")
+    master.wait_heartbeat()
+    print("Got heartbeat")
+
+    print("Arming drone")
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM,
+        0,
+        1, 0, 0, 0, 0, 0, 0)
+    print("Drone armed")
+
+    print("Setting initial setpoint")
+    # Set velocity to 0
+    master.mav.set_position_target_local_ned_send(
+        0,
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+        0b0000111111000111,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0
+    )
+
+    print("Starting offboard")
+    master.mav.command_long_send(
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_CMD_DO_SET_MODE, 0,
+        29, 6, 0, 0, 0, 0, 0, 0
+    )
+
+    # Set position to 0, 0, 10
+    setpoint_msg = master.mav.set_position_target_local_ned_encode(
+        0,
+        master.target_system,
+        master.target_component,
+        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+        0b0000111111111000,
+        0, 0, -10,
+        0, 0, 0,
+        0, 0, 0,
+        0, 0
+    )
+
+    print("Waiting for first video frame")
 
     while not video.frame_available():
         continue
 
-    gettargetposition()
+    print("Got first video frame")
+
+    while True:
+        msg = master.recv_match()
+        if not msg:
+            continue
+        if msg.get_type() == 'LOCAL_POSITION_NED':
+            msg = msg.to_dict()
+            if math.fabs(msg['x']) < 0.5 and math.fabs(msg['y']) and math.fabs(msg['z'] + 10) < 0.5:
+                break
+
+
+def run():
+    global gd, setpoint_msg
+
+    threading.Thread(target=send_current_setpoint_loop, args=()).start()
+    init()
+    threading.Thread(target=getdronepositiondata, args=()).start()
+    threading.Thread(target=getcentroiddata, args=()).start()
+    threading.Thread(target=getsetpoints, args=()).start()
+
+    _gettargetposition()
 
     input("Press Enter to start...")
     timeout_cnt = 0
 
     with open('debug_data.csv', mode='w') as csv_file:
-        fieldnames = ['time', 'x_bb', 'y_bb', 'w_bb', 'h_bb', 'f_u', 'f_v', 'f_delta', 'delta_f_u_psi', 'delta_f_u_y',
-                      'delta_f_v_z', 'delta_f_delta_x', 'delta_x_tme', 'delta_y_tme', 'delta_psi_tme', 'delta_z_tme',
-                      'prev_delta_x_tme', 'prev_delta_y_tme', 'prev_delta_psi_tme', 'prev_delta_z_tme',
-                      'v_xr', 'v_yr', 'v_zr', 'yawrate', 'pitch_angle', 'roll_angle', 'yaw_angle']
+        fieldnames = gd.keys()
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
         writer.writeheader()
         while True:
-            await asyncio.sleep(controller_period)
-            csv_row['time'] = time.time()
-            async for euler_angles in drone.telemetry.attitude_euler():
-                csv_row['pitch_angle'] = euler_angles.pitch_deg
-                csv_row['roll_angle'] = euler_angles.roll_deg
-                csv_row['yaw_angle'] = euler_angles.yaw_deg
-                break
+            gd['time'] = time.time()
 
-            v_xr, v_yr, yawrate, v_zr = getsetpoints()
+            v_xr = gd['v_xr']
+            v_yr = gd['v_yr']
+            yawrate = gd['yawrate']
+            v_zr = gd['v_zr']
+            local_vx = gd['local_vx']
+            local_vy = gd['local_vy']
+            local_vz = gd['local_vz']
 
+            # If target is not in camera frame for a while, stop moving.
+            # Note: v_xr is None when camera doesn't see anything
             if v_xr is None:
-                timeout_cnt = timeout_cnt + controller_period
+                timeout_cnt = timeout_cnt + gd['controller_period']
                 if timeout_cnt > 1/5:
-                    await drone.offboard.set_velocity_body(
-                        VelocityBodyYawspeed(0, 0, 0, 0)
+                    # Set velocity to 0
+                    setpoint_msg = master.mav.set_position_target_local_ned_encode(
+                        0,
+                        master.target_system,
+                        master.target_component,
+                        mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+                        0b0000111111000111,
+                        0, 0, 0,
+                        0, 0, 0,
+                        0, 0, 0,
+                        0, 0
                     )
-                continue
+            # Otherwise, keep going
+            else:
+                setpoint_msg = master.mav.set_position_target_local_ned_encode(
+                    0,
+                    master.target_system,
+                    master.target_component,
+                    mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+                    0b0000101111000111,
+                    0, 0, 0,
+                    v_xr, v_yr, v_zr,
+                    0, 0, 0,
+                    0, yawrate
+                )
 
-            # print("vxr: " + str(v_xr) + " vyr: " + str(v_yr) + " vzr: " + str(v_zr) + " yawrater: " + str(yawrate))
-            # async for odometry in drone.telemetry.odometry():
-            #     print(odometry)
-            #     break
+            print("vxr:%5.3f\tvyr:%5.3f\tvzr:%5.3f\tvpsir:%5.3f\tvx:%5.3f\tvy:%5.3f\tvz:%5.3f"
+                  % (v_xr, v_yr, v_zr, yawrate, local_vx, local_vy, local_vz))
 
-            await drone.offboard.set_velocity_body(
-                VelocityBodyYawspeed(v_xr, v_yr, v_zr, yawrate)
-            )
-            writer.writerow(csv_row)
+            writer.writerow(gd)
             timeout_cnt = 0
+            while time.time() - gd['time'] < gd['controller_period']:
+                continue
 
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(run())
+    run()
