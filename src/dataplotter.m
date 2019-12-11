@@ -90,7 +90,7 @@ figure
 plot(data.time, data.f_delta, data.time, data.f_delta_ref)
 legend('f_\Delta measured', 'f_\Delta desired')
 grid
-title('Benchmark f_\Delta measured vs desired for 3m/s target')
+title('f_\Delta measured vs desired for 1.5m/s target')
 ylabel('f_\Delta')
 xlabel('Time (s)')
 
@@ -99,7 +99,7 @@ figure
 plot(data.time, data.f_v, data.time, data.f_v_ref)
 legend('f_v measured', 'f_v desired')
 grid
-title('Benchmark f_v measured vs desired for 3m/s target')
+title('f_v measured vs desired for 1.5m/s target')
 ylabel('f_v')
 xlabel('Time (s)')
 
@@ -108,7 +108,7 @@ figure
 plot(data.time, data.f_u, data.time, data.f_u_ref)
 legend('f_u measured', 'f_u desired')
 grid
-title('Benchmark f_u measured vs desired for 3m/s target')
+title('f_u measured vs desired for 1.5m/s target')
 ylabel('f_u')
 xlabel('Time (s)')
 
@@ -117,7 +117,7 @@ figure
 plot(data.time, data.body_vx, data.time, data.v_xr)
 legend('v_x measured', 'v_x desired')
 grid
-title('Benchmark v_x measured vs desired for 3m/s target')
+title('v_x measured vs desired for 1.5m/s target')
 ylabel('v_x')
 xlabel('Time (s)')
 
@@ -126,7 +126,7 @@ figure
 plot(data.time, data.body_vy, data.time, data.v_yr)
 legend('v_y measured', 'v_y desired')
 grid
-title('Benchmark v_y measured vs desired for 3m/s target')
+title('v_y measured vs desired for 1.5m/s target')
 ylabel('v_y')
 xlabel('Time (s)')
 
@@ -135,7 +135,7 @@ figure
 plot(data.time, data.local_vz, data.time, data.v_zr)
 legend('v_z measured', 'v_z desired')
 grid
-title('Benchmark v_z measured vs desired for 3m/s target')
+title('v_z measured vs desired for 1.5m/s target')
 ylabel('v_z')
 xlabel('Time (s)')
 
@@ -144,6 +144,6 @@ figure
 plot(data.time, data.body_yawrate, data.time, data.yawrate)
 legend('yawrate measured', 'yawrate desired')
 grid
-title('Benchmark yawrate measured vs desired for 3m/s target')
+title('yawrate measured vs desired for 1.5m/s target')
 ylabel('yawrate(deg/s)')
 xlabel('Time (s)')
