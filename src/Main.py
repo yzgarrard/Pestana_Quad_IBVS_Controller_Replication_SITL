@@ -4,7 +4,7 @@ import time
 import math
 import cv2
 from CameraUtil import Video
-from pymavlink import mavutil
+from pymavlink import mavutil, rotmat
 import csv
 import sys
 
@@ -29,9 +29,9 @@ gd = {
     'delta_f_v_z': 0.0,
     'delta_f_delta_x': 0.0,
     'A_exp': 1225,  # m or cm or px?
-    'alpha_u': "",
-    'alpha_v': "",
-    'd_exp': 3.0,
+    'alpha_u': 100,
+    'alpha_v': 100,
+    'd_exp': 1,
     'FOV_u': 90.0,
     'FOV_v': "",
     'delta_x_tme': 0.0,
@@ -52,35 +52,39 @@ gd = {
     'got_initial_frame': False,
     'f_u_ref': 0.5,
     'f_v_ref': 0.5,
-    'f_delta_ref': 13,
+    'f_delta_ref': 17,
     'kp_vx': 0.0254,
     'kd_vx': 0.0124,
-    'kp_vy': -0.298,
-    'kd_vy': -0.145,
+    'kp_vy': 0.298,
+    'kd_vy': 0.145,
     'kp_yaw': 0.990,
     'kd_yaw': 0.119,
     'kp_vz': 1.430,
     'kd_vz': 0.371,
     'camera_period': 1/30,
     'controller_period': 1/100,
-    'v_xlat': 0,
-    'v_ylon': 0,
-    'v_zalt': 0,
     'local_x': 0,
     'local_y': 0,
     'local_z': 0,
     'local_vx': 0,
     'local_vy': 0,
-    'local_vz': 0
+    'local_vz': 0,
+    'body_vx': 0,
+    'body_vy': 0,
+    'body_vz': 0,
+    'body_yawrate': 0
 }
 
 video = Video()
 master = None
 setpoint_msg = None
-timeout_cnt = 0
+frame = None
+red_thresholded = None
 
 
 def getdronepositiondata():
+    rotation_matrix = rotmat.Matrix3()
+    world_velocity = rotmat.Vector3()
     while True:
         msg = master.recv_match()
         if not msg:
@@ -93,6 +97,13 @@ def getdronepositiondata():
             gd['local_vx'] = msg['vx']
             gd['local_vy'] = msg['vy']
             gd['local_vz'] = msg['vz']
+            world_velocity.x = msg['vx']
+            world_velocity.y = msg['vy']
+            world_velocity.z = msg['vz']
+            body_velocity = rotation_matrix * world_velocity
+            gd['body_vx'] = body_velocity.x
+            gd['body_vy'] = body_velocity.y
+            gd['body_vz'] = body_velocity.z
         elif msg.get_type() == 'ATTITUDE':
             msg = msg.to_dict()
             gd['roll_angle'] = math.degrees(msg['roll'])
@@ -100,6 +111,9 @@ def getdronepositiondata():
             gd['yaw_angle'] = math.degrees(msg['yaw'])
             gd['psi_telem'] = math.degrees(msg['yaw'])
             gd['theta_centroid'] = math.degrees(msg['pitch'])
+            gd['body_yawrate'] = math.degrees(msg['yawspeed'])
+            rotation_matrix.from_euler(msg['roll'], msg['pitch'], msg['yaw'])
+            rotation_matrix = rotation_matrix.transposed()
 
 
 def _gettargetposition():
@@ -107,7 +121,7 @@ def _gettargetposition():
     This is called by getcentroidata()
     :return:
     """
-    global gd
+    global gd, frame, red_thresholded
 
     frame = video.frame()
     red = frame[:, :, 2]
@@ -162,7 +176,7 @@ def getcentroiddata():
     t = threading.Timer(1/30, getcentroiddata)
     t.daemon = True
     t.start()
-    global gd
+    global gd, f_delta_average_idx
     _gettargetposition()
     x_bb = gd['x_bb']
     y_bb = gd['y_bb']
@@ -210,7 +224,6 @@ def _decouplecentroiddata():
     initial_f_u = gd['f_u_ref']
     initial_f_v = gd['f_v_ref']
     initial_f_delta = gd['f_delta_ref']
-    psi_telem_ref = gd['psi_telem_ref']
     theta_centroid_ref = gd['theta_centroid_ref']
     FOV_u = gd['FOV_u']
     FOV_v = gd['FOV_v']
@@ -223,8 +236,10 @@ def _decouplecentroiddata():
         return
 
     # Equation 2 from Pestana "Computer vision based general object following
+    if math.fabs(gd['psi_telem_ref'] - gd['yaw_angle']) > 25:
+        gd['yaw_angle'] = gd['yaw_angle']
     delta_f_u_psi = f_u - initial_f_u
-    delta_f_u_y = delta_f_u_psi - ((psi_telem_ref - gd['yaw_angle']) / FOV_u)
+    delta_f_u_y = delta_f_u_psi - ((gd['psi_telem_ref'] - gd['yaw_angle']) / FOV_u)
     delta_f_v_z = (f_v - initial_f_v) - ((theta_centroid_ref - gd['pitch_angle']) / FOV_v)
     delta_f_delta_x = f_delta - initial_f_delta
 
@@ -326,8 +341,6 @@ def send_current_setpoint_loop():
 def init():
     global gd, master, setpoint_msg
 
-    gd['alpha_u'] = gd['w_im']
-    gd['alpha_v'] = gd['h_im']
     gd['FOV_v'] = gd['h_im'] / gd['w_im'] * gd['FOV_u']
 
     master = mavutil.mavlink_connection("udpin:0.0.0.0:14540", baud=115200)
@@ -374,7 +387,7 @@ def init():
         master.target_component,
         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
         0b0000101111111000,
-        0, 0, -20,
+        0, 0, -10,
         0, 0, 0,
         0, 0, 0,
         1.517, 0
@@ -400,7 +413,7 @@ def calculate_setpoint():
     t = threading.Timer(1 / 100, calculate_setpoint)
     t.daemon = True
     t.start()
-    global gd, setpoint_msg, timeout_cnt
+    global gd, setpoint_msg
     with open('debug_data.csv', mode='a+') as csv_file:
         fieldnames = gd.keys()
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -414,27 +427,25 @@ def calculate_setpoint():
         # If target is not in camera frame for a while, stop moving.
         # Note: v_xr is None when camera doesn't see anything
         if v_xr is None:
-            timeout_cnt = timeout_cnt + gd['controller_period']
-            if timeout_cnt > 1/5:
-                # Set velocity to 0
-                setpoint_msg = master.mav.set_position_target_local_ned_encode(
-                    0,
-                    master.target_system,
-                    master.target_component,
-                    mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-                    0b0000111111000111,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0
-                )
+            # Set velocity to 0
+            setpoint_msg = master.mav.set_position_target_local_ned_encode(
+                0,
+                master.target_system,
+                master.target_component,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
+                0b0000111111000111,
+                0, 0, 0,
+                0, 0, 0,
+                0, 0, 0,
+                0, 0
+            )
         # Otherwise, keep going
         else:
             setpoint_msg = master.mav.set_position_target_local_ned_encode(
                 0,
                 master.target_system,
                 master.target_component,
-                mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+                mavutil.mavlink.MAV_FRAME_BODY_NED,
                 0b0000011111000111,
                 0, 0, 0,
                 v_xr, v_yr, v_zr,
@@ -444,7 +455,6 @@ def calculate_setpoint():
 
         # print(gd)
         writer.writerow(gd)
-        timeout_cnt = 0
 
 
 def run():
@@ -477,3 +487,8 @@ def run():
 
 if __name__ == "__main__":
     run()
+    # while True:
+    #     cv2.imshow("rgb", frame)
+    #     cv2.imshow("red thresholded", red_thresholded)
+    #     if cv2.waitKey(1) & 0xFF == ord('q'):
+    #         break
