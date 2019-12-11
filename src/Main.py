@@ -4,9 +4,8 @@ import time
 import math
 import cv2
 from CameraUtil import Video
-from pymavlink import mavutil
+from pymavlink import mavutil, mavextra
 import csv
-import sys
 
 # Some setup
 gd = {
@@ -61,8 +60,8 @@ gd = {
     'kd_yaw': 0.119,
     'kp_vz': 1.430,
     'kd_vz': 0.371,
-    'camera_period': 1/30,
-    'controller_period': 1/100,
+    'camera_period': 1 / 30,
+    'controller_period': 1 / 100,
     'v_xlat': 0,
     'v_ylon': 0,
     'v_zalt': 0,
@@ -77,7 +76,6 @@ gd = {
 video = Video()
 master = None
 setpoint_msg = None
-timeout_cnt = 0
 
 
 def getdronepositiondata():
@@ -159,7 +157,7 @@ def getcentroiddata():
     Calculates centroid of target in camera frame. Runs at 30Hz
     :return:
     """
-    t = threading.Timer(1/30, getcentroiddata)
+    t = threading.Timer(1 / 30, getcentroiddata)
     t.daemon = True
     t.start()
     global gd
@@ -315,7 +313,7 @@ def send_current_setpoint_loop():
     Sends the current setpoint message at 100Hz
     :return:
     """
-    t = threading.Timer(1/100, send_current_setpoint_loop)
+    t = threading.Timer(1 / 100, send_current_setpoint_loop)
     t.daemon = True
     t.start()
     global setpoint_msg
@@ -374,7 +372,7 @@ def init():
         master.target_component,
         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
         0b0000101111111000,
-        0, 0, -20,
+        0, 0, -10,
         0, 0, 0,
         0, 0, 0,
         1.517, 0
@@ -396,11 +394,12 @@ def init():
             if math.fabs(msg['x']) < 0.5 and math.fabs(msg['y']) and math.fabs(msg['z'] + 10) < 0.5:
                 break
 
+
 def calculate_setpoint():
     t = threading.Timer(1 / 100, calculate_setpoint)
     t.daemon = True
     t.start()
-    global gd, setpoint_msg, timeout_cnt
+    global gd, setpoint_msg
     with open('debug_data.csv', mode='a+') as csv_file:
         fieldnames = gd.keys()
         writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
@@ -410,41 +409,69 @@ def calculate_setpoint():
         v_yr = gd['v_yr']
         yawrate = gd['yawrate']
         v_zr = gd['v_zr']
+        local_vz = gd['local_vz']
+        yaw_angle = math.radians(gd['yaw_angle'])
+        roll_angle = math.radians(gd['roll_angle'])
+        pitch_angle = math.radians(gd['pitch_angle'])
 
         # If target is not in camera frame for a while, stop moving.
         # Note: v_xr is None when camera doesn't see anything
         if v_xr is None:
-            timeout_cnt = timeout_cnt + gd['controller_period']
-            if timeout_cnt > 1/5:
-                # Set velocity to 0
-                setpoint_msg = master.mav.set_position_target_local_ned_encode(
-                    0,
-                    master.target_system,
-                    master.target_component,
-                    mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-                    0b0000111111000111,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0, 0,
-                    0, 0
-                )
-        # Otherwise, keep going
-        else:
+            # Set velocity to 0
             setpoint_msg = master.mav.set_position_target_local_ned_encode(
                 0,
                 master.target_system,
                 master.target_component,
                 mavutil.mavlink.MAV_FRAME_LOCAL_NED,
-                0b0000011111000111,
+                0b0000111111000111,
                 0, 0, 0,
-                v_xr, v_yr, v_zr,
                 0, 0, 0,
-                0, math.radians(yawrate)
+                0, 0, 0,
+                0, 0
+            )
+        # Otherwise, keep going
+        else:
+            # setpoint_msg = master.mav.set_position_target_local_ned_encode(
+            #     0,
+            #     master.target_system,
+            #     master.target_component,
+            #     mavutil.mavlink.MAV_FRAME_LOCAL_NED,
+            #     0b0000011111000111,
+            #     0, 0, 0,
+            #     v_xr, v_yr, v_zr,
+            #     0, 0, 0,
+            #     0, math.radians(yawrate)
+            # )
+            kp_z = 1  # this gain is separate from the controller we are replicating
+            pitch_r = v_xr / 14.0  # desired pitch angle = desired velocity / (14m/s/rad)
+            roll_r = v_yr / 14.0
+            if pitch_r > 0.209:
+                pitch_r = 0.209
+            elif pitch_r < -0.209:
+                pitch_r = -0.209
+            if roll_r > 0.209:
+                roll_r = 0.209
+            elif roll_r < -0.209:
+                roll_r = -0.209
+            total_thrust = (1 / (math.cos(pitch_angle) * math.cos(roll_angle))) * (
+                        kp_z * (math.pow(v_zr, 2))) + local_vz
+            if total_thrust > 0.3:
+                total_thrust = 0.3
+            quat = mavextra.euler_to_quat([roll_r, pitch_r, yaw_angle]).tolist()
+
+            print("%6.3f\t%6.3f\t%6.3f\t%6.3f\t" % (pitch_r, roll_r, v_zr, total_thrust))
+            setpoint_msg = master.mav.set_attitude_target_encode(
+                0,
+                master.target_system,
+                master.target_component,
+                0b00000111,
+                quat,
+                0, 0, 0,
+                total_thrust
             )
 
         # print(gd)
         writer.writerow(gd)
-        timeout_cnt = 0
 
 
 def run():
