@@ -374,7 +374,7 @@ def init():
         master.target_component,
         mavutil.mavlink.MAV_FRAME_LOCAL_NED,
         0b0000101111111000,
-        0, 0, -10,
+        0, 0, -20,
         0, 0, 0,
         0, 0, 0,
         1.517, 0
