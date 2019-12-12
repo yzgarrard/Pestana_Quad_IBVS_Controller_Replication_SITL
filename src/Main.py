@@ -52,22 +52,22 @@ gd = {
     'f_u_ref': 0.5,
     'f_v_ref': 0.5,
     'f_delta_ref': 17,
-    # 'kp_vx': 2.54,
-    # 'kd_vx': 0.00124,
+    # 'kp_vx': 0.0254,
+    # 'kd_vx': 0.0000124,
     # 'kp_vy': 0.298,
     # 'kd_vy': 0.0000145,
-    # 'kp_yaw': 1.990,
+    # 'kp_yaw': 0.990,
     # 'kd_yaw': 0.0000119,
-    # 'kp_vz': 0.730,
-    # 'kd_vz': 0.0000171,
+    # 'kp_vz': 1.730,
+    # 'kd_vz': 0.0000371,
     'kp_vx': 0.0254,
     'kd_vx': 0.0000124,
     'kp_vy': 0.298,
     'kd_vy': 0.0000145,
-    'kp_yaw': 0.990,
+    'kp_yaw': 1.990,
     'kd_yaw': 0.0000119,
-    'kp_vz': 1.430,
-    'kd_vz': 0.0000371,
+    'kp_vz': 0.730,
+    'kd_vz': 0.0000171,
     'camera_period': 1/30,
     'controller_period': 1/100,
     'local_x': 0,
@@ -246,7 +246,7 @@ def _decouplecentroiddata():
     if math.fabs(gd['psi_telem_ref'] - gd['yaw_angle']) > 25:
         gd['psi_telem_ref'] = gd['yaw_angle']
     delta_f_u_psi = f_u - initial_f_u
-    delta_f_u_y = delta_f_u_psi - ((gd['psi_telem_ref'] - gd['yaw_angle']) / FOV_u)
+    delta_f_u_y = delta_f_u_psi  # - ((gd['psi_telem_ref'] - gd['yaw_angle']) / FOV_u)
     delta_f_v_z = (f_v - initial_f_v) - ((theta_centroid_ref - gd['pitch_angle']) / FOV_v)
     delta_f_delta_x = f_delta - initial_f_delta
 
