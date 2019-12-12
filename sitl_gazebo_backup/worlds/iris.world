@@ -1,0 +1,165 @@
+<?xml version="1.0" ?>
+<sdf version="1.5">
+  <world name="default">
+    <gui>
+      <plugin name="video_widget" filename="libgazebo_video_stream_widget.so"/>
+    </gui>
+	<plugin name="hello_world" filename="libhello_world_plugin.so"/>
+    <!-- A global light source -->
+    <include>
+      <uri>model://sun</uri>
+    </include>
+	
+    <!-- A ground plane -->
+    <include>
+      <uri>model://ground_plane</uri>
+    </include>
+	
+    <!-- An asphalt plane -->
+    <include>
+      <uri>model://asphalt_plane</uri>
+    </include>
+	
+    <include>
+      <uri>model://iris_fpv_cam</uri>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+	
+    <!-- An actor -->
+  	<actor name="animated_box">
+		<pose>3 0 10 0 0 0</pose>
+			<link name="link">
+				<visual name="visual">
+					<geometry>
+						<sphere>
+							,<radius>0.17</radius>
+						</sphere>
+					</geometry>
+					<material>
+						<ambient>1 0 0 1</ambient>
+						<diffuse>1 0 0 1</diffuse>
+						<specular>0 0 0 0</specular>
+						<emissive>1 0 0 1</emissive>
+					</material>
+				</visual>
+			</link>
+ 		<script>
+			<loop>true</loop>
+			<delay_start>0.000000</delay_start>
+			<auto_start>true</auto_start>
+			<trajectory id="0" type="square">
+<!--     			<waypoint>
+					<time>0.0</time>
+					<pose>13 0 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>6.667</time>
+					<pose>23 0 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>16.067</time>
+					<pose>33 10 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>22.732</time>
+					<pose>33 20 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>32.132</time>
+					<pose>23 30 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>39.8</time>
+					<pose>13 30 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>48.2</time>
+					<pose>3 20 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>54.8</time>
+					<pose>3 10 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>64.2</time>
+					<pose>13 0 10 0 0 0</pose>
+				</waypoint> -->
+     				<waypoint>
+					<time>0.0</time>
+					<pose>13 0 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>3.333</time>
+					<pose>23 0 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>8.033</time>
+					<pose>33 10 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>11.366</time>
+					<pose>33 20 10 0 0 0</pose>
+				</waypoint>
+				<waypoint>
+					<time>16.066</time>
+					<pose>23 30 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>19.399</time>
+					<pose>13 30 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>24.099</time>
+					<pose>3 20 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>27.432</time>
+					<pose>3 10 10 0 0 0</pose>
+				</waypoint> 
+				<waypoint>
+					<time>32.132</time>
+					<pose>13 0 10 0 0 0</pose>
+				</waypoint>
+			</trajectory>
+		</script>
+    </actor>
+	
+	<scene>
+		<ambient>0 0 0 1</ambient>
+		<background>0 0 0 1</background>
+	</scene>
+	
+    <physics name='default_physics' default='0' type='ode'>
+      <gravity>0 0 -9.8066</gravity>
+      <ode>
+        <solver>
+          <type>quick</type>
+          <iters>10</iters>
+          <sor>1.3</sor>
+          <use_dynamic_moi_rescaling>0</use_dynamic_moi_rescaling>
+        </solver>
+        <constraints>
+          <cfm>0</cfm>
+          <erp>0.2</erp>
+          <contact_max_correcting_vel>100</contact_max_correcting_vel>
+          <contact_surface_layer>0.001</contact_surface_layer>
+        </constraints>
+      </ode>
+      <max_step_size>0.004</max_step_size>
+      <real_time_factor>1</real_time_factor>
+      <real_time_update_rate>250</real_time_update_rate>
+      <magnetic_field>6.0e-6 2.3e-5 -4.2e-5</magnetic_field>
+    </physics>
+    <gui fullscreen='0'>
+      <camera name='user_camera'>
+        <pose>-10 0 6 0 0.3 0</pose>
+        <!-- <view_controller>orbit</view_controller>
+        <projection_type>perspective</projection_type>
+        <track_visual>
+          <name>iris</name>
+          <use_model_frame>1</use_model_frame>
+        </track_visual> -->
+      </camera>
+    </gui>
+  </world>
+</sdf>

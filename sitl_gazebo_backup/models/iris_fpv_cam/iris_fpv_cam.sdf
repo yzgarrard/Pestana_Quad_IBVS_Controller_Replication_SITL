@@ -1,0 +1,77 @@
+<?xml version='1.0'?>
+<sdf version='1.5'>
+  <model name='iris_fpv_cam'>
+
+    <include>
+      <uri>model://iris</uri>
+    </include>
+	<include>
+      <uri>model://fpv_cam</uri>
+      <pose>.1 0 0 0 0 0</pose>
+    </include>
+
+    <joint name="fpv_cam_joint" type="fixed">
+      <child>fpv_cam::link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>0 0 0</xyz>
+        <limit>
+          <upper>0</upper>
+          <lower>0</lower>
+        </limit>
+      </axis>
+    </joint>
+
+<!-- 	
+	<joint name="fpv_cam_joint" type="revolute2">
+      <child>fpv_cam::link</child>
+      <parent>iris::base_link</parent>
+      <axis>
+        <xyz>1 0 0</xyz>
+      </axis>
+	  <axis2>
+        <xyz>0 1 0</xyz>
+      </axis2>
+    </joint> -->
+	
+		
+	<!--<include>
+      <uri>model://fpv_cam</uri>
+      <pose>0 0 0 0 0 0</pose>
+    </include>
+	<joint name='link_4_JOINT_2' type='revolute'>
+        <child>fpv_cam::link</child>
+      <parent>iris::base_link</parent>
+        <pose frame=''>0 0 0 0 -0 0</pose>
+        <axis>
+          <xyz>1 0 0</xyz>
+          <use_parent_model_frame>0</use_parent_model_frame>
+          <limit>
+            <lower>-1.79769e+308</lower>
+            <upper>1.79769e+308</upper>
+            <effort>-1</effort>
+            <velocity>-1</velocity>
+          </limit>
+          <dynamics>
+            <spring_reference>0</spring_reference>
+            <spring_stiffness>0</spring_stiffness>
+            <damping>1</damping>
+            <friction>0</friction>
+          </dynamics>
+        </axis>
+        <physics>
+          <ode>
+            <limit>
+              <cfm>0</cfm>
+              <erp>0.2</erp>
+            </limit>
+            <suspension>
+              <cfm>0</cfm>
+              <erp>0.2</erp>
+            </suspension>
+          </ode>
+        </physics>
+      </joint>-->
+
+  </model>
+</sdf>

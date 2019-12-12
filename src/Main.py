@@ -28,7 +28,7 @@ gd = {
     'delta_f_u_y': 0.0,
     'delta_f_v_z': 0.0,
     'delta_f_delta_x': 0.0,
-    'A_exp': .1225,  # m or cm or px?
+    'A_exp': 1225,  # m or cm or px?
     'alpha_u': 214,  # px per m at target   Should actually be 214
     'alpha_v': 214,  # px per m at target   Should actually be 214
     'd_exp': 1,
@@ -52,14 +52,22 @@ gd = {
     'f_u_ref': 0.5,
     'f_v_ref': 0.5,
     'f_delta_ref': 17,
+    # 'kp_vx': 2.54,
+    # 'kd_vx': 0.00124,
+    # 'kp_vy': 0.298,
+    # 'kd_vy': 0.0000145,
+    # 'kp_yaw': 1.990,
+    # 'kd_yaw': 0.0000119,
+    # 'kp_vz': 0.730,
+    # 'kd_vz': 0.0000171,
     'kp_vx': 0.0254,
-    'kd_vx': 0.0124,
+    'kd_vx': 0.0000124,
     'kp_vy': 0.298,
-    'kd_vy': 0.145,
-    'kp_yaw': 0.990,# 'kp_yaw': 1.990,
-    'kd_yaw': 0.119,
-    'kp_vz': 1.430,# 'kp_vz': 0.730,
-    'kd_vz': 0.371,#'kd_vz': 0.171,
+    'kd_vy': 0.0000145,
+    'kp_yaw': 0.990,
+    'kd_yaw': 0.0000119,
+    'kp_vz': 1.430,
+    'kd_vz': 0.0000371,
     'camera_period': 1/30,
     'controller_period': 1/100,
     'local_x': 0,
@@ -236,7 +244,7 @@ def _decouplecentroiddata():
 
     # Equation 2 from Pestana "Computer vision based general object following
     if math.fabs(gd['psi_telem_ref'] - gd['yaw_angle']) > 25:
-        gd['yaw_angle'] = gd['yaw_angle']
+        gd['psi_telem_ref'] = gd['yaw_angle']
     delta_f_u_psi = f_u - initial_f_u
     delta_f_u_y = delta_f_u_psi - ((gd['psi_telem_ref'] - gd['yaw_angle']) / FOV_u)
     delta_f_v_z = (f_v - initial_f_v) - ((theta_centroid_ref - gd['pitch_angle']) / FOV_v)
