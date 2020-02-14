@@ -136,45 +136,42 @@ class Video:
 
         return Gst.FlowReturn.OK
 
-#
-# if __name__ == '__main__':
-#     # Create the video object
-#     # Add port= if is necessary to use a different one
-#     video = Video()
-#     counter = 0
-#     prevTime = time.time()
-#     while True:
-#         # Wait for the next frame
-#         if not video.frame_available():
-#             continue
-#
-#         frame = video.frame()
-#         red = frame[:, :, 2]
-#         # green = frame[:, :, 1]
-#         # blue = frame[:, :, 0]
-#         _, red_thresholded = cv2.threshold(red, 120, 255, cv2.THRESH_BINARY)
-#         # _, green_thresholded = cv2.threshold(green, 120, 255, cv2.THRESH_BINARY)
-#         # _, blue_thresholded = cv2.threshold(blue, 120, 255, cv2.THRESH_BINARY)
-#
-#         contours, hierarchy = cv2.findContours(red_thresholded, 1, 2)
-#         cnt = contours[0]
-#         x, y, w, h = cv2.boundingRect(cnt)
-#         cv2.rectangle(red_thresholded, (x, y), (x + w, y + h), (255, 255, 255))
-#
-#         # titles = ["rgb", "red", "green", "blue"]
-#         # images = [frame, red_thresholded, green_thresholded, blue_thresholded]
-#         # cv2.imshow('rgb', frame)
-#         cv2.imshow('red', red_thresholded)
-#         # cv2.imshow('green', green_thresholded)
-#         # cv2.imshow('blue', blue_thresholded)
-#
-#         # print(red_thresholded.item(80, 100))
-#         print("x_bb: %3d y_bb: %3d w_bb: %3d h_bb: %3d" % (x, y, w, h))
-#
-#         if cv2.waitKey(1) & 0xFF == ord('q'):
-#             break
-#         counter = counter + 1
-#         while (time.time() - prevTime) < 0.033:
-#             continue
-#         print(time.time() - prevTime)
-#         prevTime = time.time()
+
+if __name__ == '__main__':
+    # Create the video object
+    # Add port= if is necessary to use a different one
+    video = Video()
+    counter = 0
+    prevTime = time.time()
+    while True:
+        # Wait for the next frame
+        if not video.frame_available():
+            continue
+
+        frame = video.frame()
+        red = frame[:, :, 2]
+        green = frame[:, :, 1]
+        blue = frame[:, :, 0]
+        _, red_thresholded = cv2.threshold(red, 150, 255, cv2.THRESH_BINARY)
+        _, green_thresholded = cv2.threshold(green, 150, 255, cv2.THRESH_BINARY)
+        _, blue_thresholded = cv2.threshold(blue, 150, 255, cv2.THRESH_BINARY)
+
+        # contours, hierarchy = cv2.findContours(red_thresholded, 1, 2)
+        # cnt = contours[0]
+        # x, y, w, h = cv2.boundingRect(cnt)
+        # cv2.rectangle(red_thresholded, (x, y), (x + w, y + h), (255, 255, 255))
+
+        titles = ["rgb", "red", "green", "blue"]
+        images = [frame, red_thresholded, green_thresholded, blue_thresholded]
+        cv2.imshow('rgb', frame)
+        cv2.imshow('red', red_thresholded)
+        cv2.imshow('green', green_thresholded)
+        cv2.imshow('blue', blue_thresholded)
+
+        if cv2.waitKey(1) & 0xFF == ord('q'):
+            break
+        counter = counter + 1
+        # while (time.time() - prevTime) < 0.033:
+        #     continue
+        # print(time.time() - prevTime)
+        # prevTime = time.time()

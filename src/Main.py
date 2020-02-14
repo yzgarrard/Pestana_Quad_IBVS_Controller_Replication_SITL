@@ -480,6 +480,7 @@ def run():
     getsetpoints()
 
     input("Press Enter to start...")
+    print("Started")
 
     # Clear the data file
     with open('debug_data.csv', mode='w+') as csv_file:
